@@ -1,63 +1,127 @@
 /**
  * Created by linkfly on 20.07.16.
  */
-(() => {
+(function(){
   'use strict';
-  let NeuronBase = function(weights) {
+  let NeuronBase = function(weights){
     this.weights = weights;
+    // Сигналы полученные от других нейронов (перед прохождением через синапсы)
     this.inputLinks = [];
+    // Нейроны на вход которых подаётся выход этого нейрона (нейроны на дендриты которых подаётся сигнал от аксона этого нейрона)
+    this.neuronsLinks = [];
+    // Сигнал в "индуцированном локальном поле"
+    this.input = 0;
+    // Выход на аксоне нейрона
     this.output = 0;
   };
   NeuronBase.prototype = {
-    fn: function(inputs) {
-      /*let res = new Array(inputs.length);*/
+    fn: function(){
+      return (this.output = this.input >= 0 ? 1 : -1);
+    },
+    prepareInput: function(){
       let res = 0;
-      inputs.forEach((sig, idx) => {
+      this.inputLinks.forEach((sig, idx) =>{
         res += this.weights[idx] * sig;
       });
-      this.output = res >= 0 ? 1 : -1;
-      return this.output;
+      return (this.input = res);
     }
   };
 
-  let NeuroNetBase = function(NeuronConstructor, arWeights) {
+  /** @todo использовать es6 параметры по-умолчанию для fnConnect */
+  /** @todo вычислять arWeights с помощью передаваемой ф-ии */
+  let NeuroNetBase = function(NeuronConstructor, arWeights, patts, fnConnect){
+    let _this = this;
+    _this.weights = arWeights;
     let n = arWeights.length;
-    this.neurons = new Array(n);
-    while(n--) {
-      this.neurons[n] = new NeuronConstructor(arWeights[n]);
+    _this.patts = patts;
+    _this.neurons = new Array(n);
+    while(n--){
+      _this.neurons[n] = new NeuronConstructor(arWeights[n]);
     }
-    // Соединяем вход каждого нейрона с выходами других нейронов
-    this.neurons.forEach((neuron, idx) => {
-      let neuronsForConnect = [];
-      this.neurons.forEach((neuron2, idx2) => {
-        if (idx !== idx2)
-          neuronsForConnect.push(neuron2);
+    // По-умолчанию соединяем выход каждого нейрона со входами других нейронов
+    fnConnect = fnConnect || ((neurons) =>{
+        neurons.forEach((neuron) => neuron.neuronsLinks = neurons);
       });
-      neuron.inputLinks = neuronsForConnect;
-    });
+    fnConnect(_this.neurons);
   };
+
   NeuroNetBase.prototype = {
+    utils: {
+      eqArs: function(ar1, ar2) {
+        return ar1.every((e, i) => {
+          return e == ar2[i];
+        })
+      }
+      /*// Умножение векторов равной длины
+      mulArs: function(ar1, ar2) {
+        let
+          len = ar1.length,
+          res = new Array(len);
+        for(let i = 0; i < len; i++)
+          res[i] = ar1[i] * ar2[i];
+        return res;
+      },
+    sumAr: function(ar) {
+        return ar.reduce((a, b) => a + b);
+      }*/
+    },
     run(arInputs, nIterations) {
-      let handleNeurons = () => {
-        this.neurons.forEach((neuron, idx) => {
-          let inputs = [];
-          neuron.inputLinks.forEach((neuron) => inputs.push(neuron.output));
-          inputs.unshift(arInputs[idx]);
-          neuron.fn(inputs);
+      let
+        neurons = this.neurons,
+        utils = this.utils,
+        eqArs = utils.eqArs;
+        /*mulArs = utils.mulArs,
+        sumAr = utils.sumAr;*/
+      console.log('Patterns: ', JSON.stringify(this.patts));
+      console.log('Weights: ', JSON.stringify(this.weights));
+      console.log('Inputs: ', arInputs);
+      // Установка выходных сигналов нейронов в соотв. с переданным вектором
+      let initOutputs = () => {
+        neurons.forEach((neuron, idx) => {
+          neuron.output = arInputs[idx];
         });
       };
-      let curY = 0;
-      let correctInputs = () => {
-        curY %= arInputs.length;
-        arInputs[curY] = this.neurons[curY].output;
+      // Посылка выходных сигналов нейронов всем нейронам, с которыми связан его выход
+      let outputsToNeurons = () => {
+        neurons.forEach((neuron, i) => {
+          neuron.neuronsLinks.forEach((neuronLink) => {
+            neuronLink.inputLinks[i] = neuron.output;
+          });
+        });
       };
-      while(nIterations--) {
-        handleNeurons();
-        correctInputs();
+
+      // Умножение вектора выходных сигналов на вектор весов для нейрона j [0..N-1], N - кол-во нейронов
+      let handleInput = () => {
+        neurons.forEach((neuron) => {
+          neuron.prepareInput();
+          neuron.fn();
+        })
+      };
+
+      // Получение текущего выходного вектора
+      let getOutputs = () => neurons.map((neuron) => neuron.output);
+      let getInputLinks = () => neurons.map((neuron) => neuron.inputLinks);
+      let getInputs = () => neurons.map((neuron) => neuron.input);
+
+      // Проверка, соотв. ли выходной вектор одному из образцов (возвращает вектор с выходными сигналами)
+      let checkOutputs = () => {
+        let outputs = getOutputs();
+        let res = this.patts.some((patt) => eqArs(patt, outputs));
+        return res && outputs;
+      };
+
+      initOutputs();
+      while(nIterations--){
+        outputsToNeurons();
+        console.log('Current inputLinks: ', JSON.stringify(getInputLinks()));
+        handleInput();
+        console.log('Current inputs: ' + getInputs());
+        console.log('Current outputs: ' + getOutputs());
+        let res;
+        if(res = checkOutputs()) return res;
       }
-      return this.neurons.map((neuron) => {
-        return neuron.output;
-      });
+      console.log('fail');
+      return false;
     }
   };
 
@@ -66,6 +130,7 @@
     [1,-1,1,1],
     [-1,1,-1,-1]
     ];
+  /** @todo Перенести вычисления в NeuroNetBase */
   //////// Вычисляем E(X_i * X_i_t) - сумму матриц полученных умножением вектора X на транспонированный вектор X ////////
   // Вычисляем матрицы получаемые умножением вектора X на транспонированный вектор X
   let mats = [];
@@ -95,14 +160,7 @@
         }
     }
   }
-  console.log(weights);
-  var i = 1;
-  //while(i <= 5) {
-  {
-    //i++;
-    let net = new NeuroNetBase(NeuronBase, weights);
-    /*let res = net.run([1, -1, 1, 1], 1);*/
-    let res = net.run([1, -1, 1, 1], 1001);
-    console.log(res);
-  }
+  let net = new NeuroNetBase(NeuronBase, weights, pats);
+  let res = net.run([1, -1, 1, -1], 3);
+  console.log('Result: ', res);
 })();
