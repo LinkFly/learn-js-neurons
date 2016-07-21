@@ -3,7 +3,17 @@
  */
 (function(){
   'use strict';
+  let log = function() {
+    console.log.apply(console, arguments);
+    let html = '<br/><pre>';
+    for(let i = 0; i < arguments.length; i++) {
+      html += JSON.stringify(arguments[i]) + '    ';
+    }
+    html += '</pre>';
+    document.writeln(html);
+  };
   let NeuronBase = function(weights){
+    /** @todo проверить будет ли возвращаемый объект через "return {...};" содержать правильный конструктор и прототип */
     this.weights = weights;
     // Сигналы полученные от других нейронов (перед прохождением через синапсы)
     this.inputLinks = [];
@@ -29,14 +39,15 @@
 
   /** @todo использовать es6 параметры по-умолчанию для fnConnect */
   /** @todo вычислять arWeights с помощью передаваемой ф-ии */
-  let NeuroNetBase = function(NeuronConstructor, arWeights, patts, fnConnect){
+  let NeuroNetBase = function(NeuronConstructor, patts, fnConnect){
     let _this = this;
-    _this.weights = arWeights;
-    let n = arWeights.length;
+    let weights = this.getWeightsByPatts(patts);
+    _this.weights =  weights;
+    let n = weights.length;
     _this.patts = patts;
     _this.neurons = new Array(n);
     while(n--){
-      _this.neurons[n] = new NeuronConstructor(arWeights[n]);
+      _this.neurons[n] = new NeuronConstructor(weights[n]);
     }
     // По-умолчанию соединяем выход каждого нейрона со входами других нейронов
     fnConnect = fnConnect || ((neurons) =>{
@@ -65,6 +76,39 @@
         return ar.reduce((a, b) => a + b);
       }*/
     },
+    /** @todo Перенести вычисления в NeuroNetBase */
+    getWeightsByPatts: (patts) => {
+      //////// Вычисляем E(X_i * X_i_t) - сумму матриц полученных умножением вектора X на транспонированный вектор X ////////
+      // Вычисляем матрицы получаемые умножением вектора X на транспонированный вектор X
+      let mats = [];
+      patts.forEach((pat) => {
+        let mat = [];
+        pat.forEach((n) => {
+          let line = [];
+          pat.forEach((n2) => {
+            line.push(n * n2);
+          });
+          mat.push(line);
+        });
+        mats.push(mat);
+      });
+      let len = mats.length;
+      // Складываем матрицы и получаем веса
+      let weights = new Array(len);
+      let vlen = mats[0][0].length;
+      for(let i = 0; i < vlen; i++) {
+        var line = new Array(len);
+        weights[i] = (line);
+        for(let j = 0; j < vlen; j++) {
+          line[j] = 0;
+          if (!(i == j))
+            for(let k = 0; k < len; k++) {
+              line[j] += mats[k][i][j];
+            }
+        }
+      }
+      return weights;
+    },
     run(arInputs, nIterations) {
       let
         neurons = this.neurons,
@@ -72,9 +116,9 @@
         eqArs = utils.eqArs;
         /*mulArs = utils.mulArs,
         sumAr = utils.sumAr;*/
-      console.log('Patterns: ', JSON.stringify(this.patts));
-      console.log('Weights: ', JSON.stringify(this.weights));
-      console.log('Inputs: ', arInputs);
+      log('Patterns: ', JSON.stringify(this.patts));
+      log('Weights: ', JSON.stringify(this.weights));
+      log('Inputs: ', arInputs);
       // Установка выходных сигналов нейронов в соотв. с переданным вектором
       let initOutputs = () => {
         neurons.forEach((neuron, idx) => {
@@ -113,54 +157,25 @@
       initOutputs();
       while(nIterations--){
         outputsToNeurons();
-        console.log('Current inputLinks: ', JSON.stringify(getInputLinks()));
+        log('Current inputLinks: ', JSON.stringify(getInputLinks()));
         handleInput();
-        console.log('Current inputs: ' + getInputs());
-        console.log('Current outputs: ' + getOutputs());
+        log('Current inputs: ' + getInputs());
+        log('Current outputs: ' + getOutputs());
         let res;
         if(res = checkOutputs()) return res;
       }
-      console.log('fail');
+      log('fail');
       return false;
     }
   };
 
-  let pats = [
+  /*********** Test ************/
+  let patts = [
     [-1,1,-1,1],
     [1,-1,1,1],
     [-1,1,-1,-1]
     ];
-  /** @todo Перенести вычисления в NeuroNetBase */
-  //////// Вычисляем E(X_i * X_i_t) - сумму матриц полученных умножением вектора X на транспонированный вектор X ////////
-  // Вычисляем матрицы получаемые умножением вектора X на транспонированный вектор X
-  let mats = [];
-  pats.forEach((pat) => {
-    let mat = [];
-    pat.forEach((n) => {
-      let line = [];
-      pat.forEach((n2) => {
-        line.push(n * n2);
-      });
-      mat.push(line);
-    });
-    mats.push(mat);
-  });
-  let len = mats.length;
-  // Складываем матрицы и получаем веса
-  let weights = new Array(len);
-  let vlen = mats[0][0].length;
-  for(let i = 0; i < vlen; i++) {
-    var line = new Array(len);
-    weights[i] = (line);
-    for(let j = 0; j < vlen; j++) {
-      line[j] = 0;
-      if (!(i == j))
-        for(let k = 0; k < len; k++) {
-          line[j] += mats[k][i][j];
-        }
-    }
-  }
-  let net = new NeuroNetBase(NeuronBase, weights, pats);
+  let net = new NeuroNetBase(NeuronBase, patts);
   let res = net.run([1, -1, 1, -1], 3);
-  console.log('Result: ', res);
+  log('Result: ', res);
 })();
